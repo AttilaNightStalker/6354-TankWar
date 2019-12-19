@@ -1,0 +1,15 @@
+"F:\WorkSpace\Vandy\19fall-EECE6354_Advanced_Real-time_Systems\IAR_Embedded_Workbench\arm\bin\armproc.dll" 
+
+"F:\WorkSpace\Vandy\19fall-EECE6354_Advanced_Real-time_Systems\IAR_Embedded_Workbench\arm\bin\armjlink2.dll" 
+
+"F:\WorkSpace\Vandy\19fall-EECE6354_Advanced_Real-time_Systems\project\EECE6354-Project-Part-II\EECE6354-Project-Part-II\ClassProject\Flash\Exe\ClassProject.out" 
+
+--plugin "F:\WorkSpace\Vandy\19fall-EECE6354_Advanced_Real-time_Systems\IAR_Embedded_Workbench\arm\bin\armbat.dll" 
+
+--device_macro "F:\WorkSpace\Vandy\19fall-EECE6354_Advanced_Real-time_Systems\IAR_Embedded_Workbench\arm\config\debugger\ST\STM32F1xx.dmac" 
+
+--flash_loader "F:\WorkSpace\Vandy\19fall-EECE6354_Advanced_Real-time_Systems\IAR_Embedded_Workbench\arm\config\flashloader\ST\FlashSTM32F105xC.board" 
+
+
+
+

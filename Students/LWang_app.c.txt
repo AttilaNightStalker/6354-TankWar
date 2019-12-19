@@ -1,0 +1,627 @@
+#include <includes.h>
+#include <string.h>
+#include <math.h>
+#include "BattlefieldLib.h"
+
+#define MAX_ENEMY 2
+
+#define NONE_DIR 7.0f
+#define D_PI 6.283185307f
+#define PI 3.141592653f
+#define PI_2 1.570796326f
+#define PI_4 0.785398163f
+
+#define CORNER_L 310
+#define CORNER_D 460
+#define CORNER_R 510
+#define CORNER_U 260
+#define REACH_DST 10
+
+#define MIN_DST 80
+#define MIN_DST_2 40
+
+#define SAFE_DST 200
+#define ESCAPE_DST 150
+
+#define WARN_TAN 0.2
+
+#define angleRatio 0.1
+#define anticRate 2.4
+/*
+*********************************************************************************************************
+*                                       LOCAL GLOBAL VARIABLES
+*********************************************************************************************************
+*/
+
+typedef struct {
+    OS_MUTEX mtx;
+    Tank *tank;
+    float nearMis_prv;
+    float nearMis_cur;
+
+    float threatDir_prv;
+    float threatDir_cur;
+
+    int friendId;
+    float friendDir;
+    float collidDir;
+
+    int enemyId;
+    float enemyDir;
+    float enemyDir_prv;
+
+    float heading;
+    Point pos;
+
+    Point corners[4];
+    // int prevThreat;
+} TankInfo;
+
+OS_ERR lwang_err_tes;
+CPU_TS lwang_ts_tes;
+
+TankInfo lwang_tankInfoA;
+TankInfo lwang_tankInfoB;
+
+TankInfo lwang_tankInfoC;
+TankInfo lwang_tankInfoD;
+
+/*
+*********************************************************************************************************
+*                                      LOCAL FUNCTION PROTOTYPES
+*********************************************************************************************************
+*/
+
+
+static void lwang_tests(void *param);
+static void lwang_lwang_detect (void *param);
+static void lwang_drive(void *param);
+
+float lwang_relToabs(float relAngle);
+bool lwang_shoot(TankInfo *tankInfo);
+float lwang_dist(Point a, Point b);
+
+float lwang_avoidFriend(TankInfo *tankInfo);
+float lwang_avoidThreat(TankInfo *tankInfo);
+float lwang_toCorner(TankInfo *tankInfo, Point cornerPos);
+float lwang_avoidEdge (TankInfo *tankInfo);
+
+
+// Student initialization function
+void LWang_init(char teamNumber)
+{
+    // Initialize any system constructs (such as mutexes) here
+    
+    // Perform any user-required initializations here
+    lwang_tankInfoA.tank = create_tank(teamNumber, "hahaha");
+    lwang_tankInfoB.tank = create_tank(teamNumber, "hehehehe");
+
+    int idA = initialize_tank(lwang_tankInfoA.tank);
+    int idB = initialize_tank(lwang_tankInfoB.tank);
+    // Register user functions here
+    OSMutexCreate(&lwang_tankInfoA.mtx, "Amtx",  &lwang_err_tes);
+    OSMutexCreate(&lwang_tankInfoB.mtx, "Bmtx",  &lwang_err_tes);
+
+    lwang_tankInfoA.nearMis_prv = -1;
+    lwang_tankInfoA.nearMis_cur = -1;
+    lwang_tankInfoB.nearMis_prv = -1;
+    lwang_tankInfoB.nearMis_cur = -1;
+
+    lwang_tankInfoA.enemyId = -1;
+    lwang_tankInfoB.enemyId = -1;
+
+    lwang_tankInfoA.threatDir_prv = NONE_DIR;
+    lwang_tankInfoA.threatDir_cur = NONE_DIR;
+    lwang_tankInfoB.threatDir_prv = NONE_DIR;
+    lwang_tankInfoB.threatDir_cur = NONE_DIR;
+
+    // lwang_tankInfoA.prevThreat = 0;
+    // lwang_tankInfoB.prevThreat = 0;
+
+    lwang_tankInfoA.friendId = idB;
+    lwang_tankInfoB.friendId = idA;
+
+    lwang_tankInfoA.corners[0].x = lwang_tankInfoB.corners[0].x = CORNER_L;
+    lwang_tankInfoA.corners[0].y = lwang_tankInfoB.corners[0].y = CORNER_U;
+    lwang_tankInfoA.corners[1].x = lwang_tankInfoB.corners[1].x = CORNER_R;
+    lwang_tankInfoA.corners[1].y = lwang_tankInfoB.corners[1].y = CORNER_U;
+    lwang_tankInfoA.corners[2].x = lwang_tankInfoB.corners[2].x = CORNER_R;
+    lwang_tankInfoA.corners[2].y = lwang_tankInfoB.corners[2].y = CORNER_D;
+    lwang_tankInfoA.corners[3].x = lwang_tankInfoB.corners[3].x = CORNER_L;
+    lwang_tankInfoA.corners[3].y = lwang_tankInfoB.corners[3].y = CORNER_D;
+
+    register_user(&lwang_detect, 5, &lwang_tankInfoA);
+    register_user(&lwang_detect, 5, &lwang_tankInfoB);
+    register_user(&lwang_drive, 6, &lwang_tankInfoA);
+    register_user(&lwang_drive, 6, &lwang_tankInfoB); 
+}
+
+void LWang_lwang_tests_init(char teamNumber)
+{
+    // Initialize any system constructs (such as mutexes) here
+    
+    // Perform any user-required initializations here
+    lwang_tankInfoC.tank = create_tank(teamNumber, "hahaha");
+    lwang_tankInfoD.tank = create_tank(teamNumber, "hehehehe");
+
+    int idC = initialize_tank(lwang_tankInfoC.tank);
+    int idD = initialize_tank(lwang_tankInfoD.tank);
+    // Register user functions here
+
+    OSMutexCreate(&lwang_tankInfoC.mtx, "Cmtx",  &lwang_err_tes);
+    OSMutexCreate(&lwang_tankInfoD.mtx, "Dmtx",  &lwang_err_tes);
+
+    lwang_tankInfoC.nearMis_prv = -1;
+    lwang_tankInfoC.nearMis_cur = -1;
+    lwang_tankInfoD.nearMis_prv = -1;
+    lwang_tankInfoD.nearMis_cur = -1;
+
+    lwang_tankInfoC.enemyId = -1;
+    lwang_tankInfoD.enemyId = -1;
+
+    lwang_tankInfoC.threatDir_prv = NONE_DIR;
+    lwang_tankInfoC.threatDir_cur = NONE_DIR;
+    lwang_tankInfoD.threatDir_prv = NONE_DIR;
+    lwang_tankInfoD.threatDir_cur = NONE_DIR;
+
+    // lwang_tankInfoC.prevThreat = 0;
+    // lwang_tankInfoD.prevThreat = 0;
+
+    lwang_tankInfoC.friendId = idD;
+    lwang_tankInfoD.friendId = idC;
+
+    lwang_tankInfoC.corners[0].x = lwang_tankInfoD.corners[0].x = CORNER_L;
+    lwang_tankInfoC.corners[0].y = lwang_tankInfoD.corners[0].y = CORNER_U;
+    lwang_tankInfoC.corners[1].x = lwang_tankInfoD.corners[1].x = CORNER_R;
+    lwang_tankInfoC.corners[1].y = lwang_tankInfoD.corners[1].y = CORNER_U;
+    lwang_tankInfoC.corners[2].x = lwang_tankInfoD.corners[2].x = CORNER_R;
+    lwang_tankInfoC.corners[2].y = lwang_tankInfoD.corners[2].y = CORNER_D;
+    lwang_tankInfoC.corners[3].x = lwang_tankInfoD.corners[3].x = CORNER_L;
+    lwang_tankInfoC.corners[3].y = lwang_tankInfoD.corners[3].y = CORNER_D;
+
+    // register_user(&lwang_detect, 5, &lwang_tankInfoC);
+    // register_user(&lwang_detect, 5, &lwang_tankInfoD);
+    register_user(&lwang_tests, 6, &lwang_tankInfoC);
+    register_user(&lwang_tests, 6, &lwang_tankInfoD); 
+}
+
+
+
+static void lwang_detect (void *param) {
+
+    TankInfo *tankInfo = (TankInfo*)param;
+    RadarData radarData;
+
+    while (1) {
+        
+        OSMutexPend(&tankInfo->mtx, 0, OS_OPT_PEND_BLOCKING, &lwang_ts_tes, &lwang_err_tes);
+        poll_radar(tankInfo->tank, &radarData);
+        tankInfo->nearMis_prv = tankInfo->nearMis_cur;
+        tankInfo->threatDir_prv = tankInfo->threatDir_cur;
+/* lwang_detect nearest missile */
+        if (radarData.numMissiles == 0) {
+            tankInfo->nearMis_cur = -1;
+            tankInfo->threatDir_cur = NONE_DIR;
+        }
+        else {
+            int threadIdx = 0;
+            tankInfo->nearMis_cur = radarData.missilelwang_distances[0];
+
+            for (int i = 1; i < radarData.numMissiles; i++) {
+                if (radarData.missilelwang_distances[i] < tankInfo->nearMis_cur) {
+                    tankInfo->nearMis_cur = radarData.missilelwang_distances[i];
+                    threadIdx = i;
+                }
+            }
+
+            tankInfo->nearMis_cur = radarData.missilelwang_distances[threadIdx];
+            tankInfo->threatDir_cur = radarData.missileBearings[threadIdx];
+            if (tankInfo->threatDir_cur < 0) {
+                tankInfo->threatDir_cur = tankInfo->threatDir_cur + D_PI;
+            }
+        }
+
+/* lwang_detect nearest enemy + friend */
+        float enemylwang_dist = 999999;
+        int targetId = -1;
+        tankInfo->friendDir = NONE_DIR;
+        tankInfo->enemyDir_prv = tankInfo->enemyDir;
+        tankInfo->enemyDir = NONE_DIR;
+        tankInfo->collidDir = NONE_DIR;
+
+        if (radarData.numTanks == 0) {
+            tankInfo->enemyId = -1;
+        }
+        else {
+            for (int i = 0; i < radarData.numTanks; i++) {
+                // if (radarData.tankIDs[i] == tankInfo->friendId) {
+                //     if (radarData.tanklwang_distances[i] < SAFE_DST/2) {
+                //         tankInfo->friendDir = radarData.tankBearings[i];
+                //     }
+                //     continue;
+                // }
+
+                 if (radarData.tanklwang_distances[i] < SAFE_DST/2 && 
+                    (radarData.tankBearings[i] < PI_2 || radarData.tankBearings[i] > D_PI - PI_2)) {
+                    tankInfo->collidDir = radarData.tankBearings[i];
+                }
+
+                if (radarData.tankIDs[i] == tankInfo->friendId) {
+
+                    tankInfo->friendDir = radarData.tankBearings[i];
+                    continue;
+                }
+
+                // if (radarData.tankIDs[i] == tankInfo->enemyId) {
+                //     targetId = radarData.tankIDs[i];
+                //     tankInfo->enemyDir = radarData.tankBearings[i];
+                //     enemylwang_dist = radarData.tanklwang_distances[i];
+                //     break;
+                // }
+
+                if (radarData.tanklwang_distances[i] < enemylwang_dist) {
+                    targetId = radarData.tankIDs[i];
+                    tankInfo->enemyDir = radarData.tankBearings[i];
+                    enemylwang_dist = radarData.tanklwang_distances[i];
+                }
+            }
+
+            if (targetId != tankInfo->enemyId) {
+                tankInfo->enemyDir_prv = NONE_DIR;
+            }
+
+            tankInfo->enemyId = targetId;
+
+        }
+
+        OSMutexPost(&tankInfo->mtx, OS_OPT_POST_1, &lwang_err_tes);   
+        // BSP_LED_On(2);
+        OSTimeDlyHMSM(0, 0, 0, 50, OS_OPT_TIME_HMSM_STRICT,  &lwang_err_tes);
+        // BSP_LED_Off(2);
+    }
+}
+
+
+static void lwang_drive(void *param) {
+
+    Point curPos;
+    int count = 0;
+    float steering;
+    TankInfo *tankInfo = (TankInfo*)param;
+    create_turret(tankInfo->tank);
+
+    int light = 0;
+    while (1) {
+        OSMutexPost(&tankInfo->mtx, OS_OPT_POST_1, &lwang_err_tes);
+        // OSSched();
+        BSP_LED_On(light);
+        // OSTimeDlyHMSM(0, 0, 0, 30, OS_OPT_TIME_HMSM_STRICT,  &lwang_err_tes);
+        OSSched();
+        BSP_LED_Off(light);
+
+        OSMutexPend(&tankInfo->mtx, 0, OS_OPT_PEND_BLOCKING, &lwang_ts_tes, &lwang_err_tes);
+
+        lwang_shoot(tankInfo);
+
+        accelerate(tankInfo->tank, ACCELERATE_LIMIT);
+
+        tankInfo->pos = get_position(tankInfo->tank);
+        tankInfo->heading = get_heading(tankInfo->tank);
+
+        if (lwang_dist(tankInfo->pos, tankInfo->corners[count]) < REACH_DST) {
+            count = (count + 1) % 4;
+        }
+        
+        steering = lwang_avoidEdge(tankInfo);
+        if (steering < NONE_DIR) {
+            set_steering(tankInfo->tank, steering);
+            light = 1;
+            continue;
+        }
+
+        steering = lwang_avoidFriend(tankInfo);
+        if (steering < NONE_DIR) {
+            set_steering(tankInfo->tank, steering);
+            continue;
+        }
+
+        steering = lwang_avoidThreat(tankInfo);
+        if (steering < NONE_DIR) {
+            set_steering(tankInfo->tank, steering);
+            // tankInfo->prevThreat = 1;
+            light = 2;
+            continue;
+        }
+        // else if (tankInfo->nearMis_cur > ESCAPE_DST || tankInfo->nearMis_cur > tankInfo->nearMis_prv){
+        //     tankInfo->prevThreat = 0;
+        // }
+
+        steering = lwang_toCorner(tankInfo, tankInfo->corners[count]);
+        set_steering(tankInfo->tank, steering);
+        light = 3;
+    }
+}
+
+float lwang_relToabs(float relAngle) {
+    if (relAngle < PI + PI_2 && relAngle > PI_2) {
+        float base = relAngle - PI;
+        return relAngle + base*angleRatio;
+    }
+    else {
+        if (relAngle <= PI) {
+            return relAngle*(1 - angleRatio);
+        }
+        else {
+            return D_PI - (D_PI - relAngle)*(1 - angleRatio);
+        }
+    }
+}
+
+bool lwang_shoot(TankInfo *tankInfo) {
+    // return fire(tankInfo->tank);
+    if (tankInfo->enemyId == -1 || tankInfo->enemyDir_prv >= NONE_DIR) {
+        return FALSE;
+    }
+    
+    float friendTrd = NONE_DIR;
+
+    float prvAngle = lwang_relToabs(tankInfo->enemyDir_prv);
+    float curAngle = lwang_relToabs(tankInfo->enemyDir);
+    float predAngle = curAngle + (curAngle - prvAngle) * angleRatio;
+    if (predAngle < 0) {
+        predAngle = predAngle + D_PI;
+    }
+    if (predAngle > D_PI) {
+        predAngle = predAngle - D_PI;
+    }
+
+    if (tankInfo->friendDir < NONE_DIR) {
+        friendTrd = predAngle - tankInfo->friendDir;
+    }
+
+    if (friendTrd < PI_4/2 && friendTrd > - PI_4/2) {
+        return FALSE;
+    }
+
+    set_turret_angle(tankInfo->tank, predAngle);
+    return fire(tankInfo->tank);
+}
+
+
+float lwang_dist(Point a, Point b) {
+    return sqrt((a.x - b.x)*(a.x - b.x) + (a.y - b.y)*(a.y - b.y));
+}
+
+
+float lwang_avoidFriend(TankInfo *tankInfo) {
+    if (tankInfo->collidDir >= NONE_DIR) {
+        return NONE_DIR;
+    }
+    if (tankInfo->collidDir < PI_2) {
+        return -STEER_LIMIT;
+    }
+    // if (tankInfo->friendDir < PI_2) {
+    //     return tankInfo->friendDir - PI_2;
+    // }
+
+    // if (tankInfo->friendDir > D_PI - PI_4) {
+    //     return STEER_LIMIT;
+    // }
+    if (tankInfo->collidDir > D_PI - PI_2) {
+        // return tankInfo->friendDir - D_PI + PI_2;
+        return STEER_LIMIT;
+    }
+
+    return NONE_DIR;
+}   
+
+float lwang_avoidThreat(TankInfo *tankInfo) {
+    if ((tankInfo->nearMis_cur > SAFE_DST) 
+        || (tankInfo->nearMis_cur == -1) 
+        || (tankInfo->nearMis_cur > tankInfo->nearMis_prv && tankInfo->nearMis_prv > -1)) {
+        return NONE_DIR;
+    }
+
+    if (tankInfo->nearMis_prv == -1) {
+        if (tankInfo->threatDir_cur < PI_4) {
+            return -STEER_LIMIT;
+        }
+        if (tankInfo->threatDir_cur < PI_2) {
+            return tankInfo->threatDir_cur - PI_2;
+        }
+        if (tankInfo->threatDir_cur > D_PI - PI_4) {
+            return STEER_LIMIT;
+        }
+        if (tankInfo->threatDir_cur > D_PI - PI_2) {
+            return tankInfo->threatDir_cur - D_PI + PI_2;
+        }
+
+        return NONE_DIR;
+    }
+
+    float angleDst = tankInfo->threatDir_cur - tankInfo->threatDir_prv;
+    if (fabsf(angleDst) > PI_4 && fabsf(angleDst) < D_PI - PI_4) {
+        return NONE_DIR;
+    }
+
+    if (sin(fabsf(angleDst))*tankInfo->nearMis_cur / (tankInfo->nearMis_prv - tankInfo->nearMis_cur) < WARN_TAN) {
+        
+        if (tankInfo->threatDir_cur > PI_2 && tankInfo->threatDir_cur < PI + PI_2) {
+            if (angleDst > 0) {
+                return STEER_LIMIT;
+            }
+            else {
+                return -STEER_LIMIT;
+            }
+        }
+        else {
+            if (angleDst > 0) {
+                return -STEER_LIMIT;
+            }
+            else {
+                return STEER_LIMIT;
+            }
+        }
+
+        return NONE_DIR;
+    }
+    
+}
+
+
+float lwang_toCorner(TankInfo *tankInfo, Point cornerPos) {
+    if (cornerPos.x == tankInfo->pos.x) {
+        return 0;
+    }
+
+    float angle = atan((float)(tankInfo->pos.y - cornerPos.y) / (float)(cornerPos.x - tankInfo->pos.x));
+    if (cornerPos.x < tankInfo->pos.x) {
+        angle = angle + PI;
+    }
+    if (angle < 0) {
+        angle = angle + D_PI;
+    }
+
+    float rotate = angle - tankInfo->heading;
+    if (rotate > 0) {
+        if (rotate < PI) {
+            if (rotate < PI_4) {
+                return rotate;
+            }
+            return STEER_LIMIT;
+        }
+        else {
+            if (rotate > D_PI - PI_4) {
+                return rotate - D_PI;
+            }
+            return -STEER_LIMIT;
+        }
+    }
+    else {
+        if (rotate > -PI) {
+            if (rotate > -PI_4) {
+                return rotate;
+            }
+            return -STEER_LIMIT;
+        }
+        else {
+            if (rotate < PI_4 - D_PI) {
+                return rotate + D_PI;
+            }
+            return STEER_LIMIT;
+        }
+    }
+}
+
+
+float lwang_avoidEdge (TankInfo *tankInfo) {
+    Point pos = get_position(tankInfo->tank);
+
+    int up = pos.y - MINY;
+    int left = pos.x - MINX;
+    int down = MAXY - pos.y;
+    int right = MAXX - pos.x;
+
+    if (up < MIN_DST && tankInfo->heading < PI) {
+        
+        if (left < MIN_DST && tankInfo->heading > PI_2) {
+            if (tankInfo->heading < PI_2 + PI_4) {
+                return -STEER_LIMIT;
+            }
+            else {
+                return STEER_LIMIT;
+            }
+        }
+
+        if (right < MIN_DST && tankInfo->heading <= PI_2) {
+            if (tankInfo->heading < PI_4) {
+                return -STEER_LIMIT;
+            }
+            else {
+                return STEER_LIMIT;
+            }
+        }
+
+        if (up < MIN_DST_2) {
+            if (tankInfo->heading > PI_2) {
+                return STEER_LIMIT;
+            }
+            else {
+                return -STEER_LIMIT;
+            }
+        }
+    }
+
+    else if (down < MIN_DST && tankInfo->heading >= PI) {
+
+        if (left < MIN_DST && tankInfo->heading < PI + PI_2) {
+            if (tankInfo->heading < PI + PI_4) {
+                return -STEER_LIMIT;
+            }
+            else {
+                return STEER_LIMIT;
+            }
+        }
+
+        if (right < MIN_DST && tankInfo->heading >= PI + PI_2) {
+            if (tankInfo->heading < D_PI - PI_4) {
+                return -STEER_LIMIT;
+            }
+            else {
+                return STEER_LIMIT;
+            }
+        }
+
+        if (down < MIN_DST_2) {
+            if (tankInfo->heading > PI + PI_2) {
+                return STEER_LIMIT;
+            }
+            else {
+                return -STEER_LIMIT;
+            }
+        }
+    }
+
+    if (left < MIN_DST_2 && tankInfo->heading > PI_2 && tankInfo->heading < PI + PI_2) {
+        if (tankInfo->heading < PI) {
+            return -STEER_LIMIT;
+        }
+        else {
+            return STEER_LIMIT;
+        }
+    }
+    else if (right < MIN_DST_2 && (tankInfo->heading < PI_2 || tankInfo->heading > PI + PI_2)) {
+        if (tankInfo->heading < PI_2) {
+            return STEER_LIMIT;
+        }
+        else {
+            return -STEER_LIMIT;
+        }
+    }
+
+    return NONE_DIR;
+}
+
+
+
+static void lwang_tests(void *param) {
+    TankInfo* tankInfo = (TankInfo*)param;  
+    bool fired;
+
+    create_turret(tankInfo->tank);
+    while (1) {
+        accelerate(tankInfo->tank, ACCELERATE_LIMIT);
+        set_steering(tankInfo->tank, STEER_LIMIT);
+        fired = fire(tankInfo->tank);
+        if (fired = TRUE) {
+            BSP_LED_On(1);
+        }
+        else {
+            BSP_LED_On(2);
+        }
+
+        OSTimeDlyHMSM(0, 0, 0, 20, OS_OPT_TIME_HMSM_STRICT,  &lwang_err_tes);
+
+        BSP_LED_Off(0);
+    }
+}
